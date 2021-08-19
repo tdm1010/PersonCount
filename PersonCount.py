@@ -17,6 +17,17 @@ from tensorflow.keras.layers import (
 )
 from tensorflow.keras.regularizers import l2
 
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
+from email.utils import COMMASPACE, formatdate
+import email.encoders
+import email.header
+import imaplib
+import email
+import base64
+import smtplib
+
 clear = lambda: os.system('cls') #on Windows System
 
 yolo_anchors = np.array([(10, 13), (16, 30), (33, 23), (30, 61), (62, 45),
@@ -24,6 +35,20 @@ yolo_anchors = np.array([(10, 13), (16, 30), (33, 23), (30, 61), (62, 45),
                         np.float32) / 416
 
 yolo_anchor_masks = np.array([[6, 7, 8], [3, 4, 5], [0, 1, 2]])
+
+fileses = []
+listing = ['tdm-123@hotmail.com']
+ccMails = []
+bccMails = []
+
+cuerpo = '<hr style="background-color: rgba(164,30,73,0.5); height: 1.5px;" />'
+cuerpo += '<p style="font-size: 15px;"><strong>*ALERTA* *ALERTA* *ALERTA*.</strong></p>'
+cuerpo += '<p style="font-size: 15px;"><strong>Se ha superado el numero de personas permitidas en la zona.</strong></p>'
+
+cuerpo += '<hr style="background-color: rgba(164,30,73,0.5); height: 1.5px;" />'
+cuerpo += '<p>&nbsp;</p>'
+cuerpo += '<p>&nbsp;</p>'
+cuerpo += '<p><span style="color: #808080;">Este es un mensaje automatizado.</span></p>'
 
 def load_darknet_weights(model, weights_file):
     '''
@@ -309,6 +334,56 @@ def YoloV3(size=None, channels=3, anchors=yolo_anchors,
 
     return Model(inputs, outputs, name='yolov3')
 
+def sendMail(sender = 'Notificaciones def', receiver = [], ccRec = [], bccRec = [],
+            subject = 'Default subject', body = 'Default message body', htmlBody = False, htmlImages = [],
+            files = [], server = 'smtp.gmail.com',
+            mailUsr = '@gmail.com', mailPwd = ''):
+
+    # default users to receive mail
+    defRec = ['@hotmail.com']
+    receiver = defRec if receiver == [] else receiver
+
+    # creating mail object
+    msg = MIMEMultipart()
+    msg['From'] = sender + ' <' + mailUsr + '>'
+    msg['To'] = ', '.join(receiver)
+    msg['Cc'] = ', '.join(ccRec) if ccRec != [] else None
+    msg['Date'] = formatdate(localtime=True)
+    msg['Subject'] = subject
+    
+    recTot = receiver + ccRec + bccRec
+    
+    bodyContentType = 'html' if htmlBody else 'plain'
+    msg.attach(MIMEText(body, bodyContentType))
+    if(htmlBody and htmlImages != []):
+        for image in htmlImages:    # image = [cid, fileInBytes]
+            # with open(image[1], 'rb') as imagen:
+                # imagenByte = imagen.read()
+            img = MIMEImage(image[1], 'jpeg')
+            img.add_header('Content-Id', '<%s>' % (image[0]))
+            msg.attach(img)
+
+    for f in files:
+        part = MIMEBase('application', "octet-stream")
+        part.set_payload( open(f,"rb").read() )
+        email.encoders.encode_base64(part)
+        part.add_header('Content-Disposition', 'attachment; filename="%s"' % os.path.basename(f))
+        msg.attach(part)
+
+    try:
+        server = smtplib.SMTP_SSL(server, 465)
+        server.ehlo()
+        server.login(mailUsr, mailPwd)
+        server.sendmail(msg['From'], recTot, msg.as_string())
+        server.close()
+
+        print ('Email sent!')
+
+        return ('200')
+    except:
+        print ('Something went wrong...')
+        return ('400')
+
 # Run this lines to create de file with pre-trained weights
 # url = 'https://pjreddie.com/media/files/yolov3.weights'
 # yolov3 = wget.download(url, out='models/yolov3.weights')
@@ -318,9 +393,11 @@ load_darknet_weights(yolo, 'models/yolov3.weights')
 cap = cv2.VideoCapture(0)
 
 cycle_count = 0
+cycle_count_aux = 0
 
 while(True):
     cycle_count += 1
+    cycle_count_aux += 1
     ret, image = cap.read()
     if ret == False:
         break
@@ -341,12 +418,29 @@ while(True):
     print()
     print()
     print('Cycle_count:', cycle_count)
+    print('Cycle_count_aux:', cycle_count_aux)
 
     if cycle_count == 100:
         break
         
     image = draw_outputs(image, (boxes, scores, classes, nums), class_names)
     cv2.imshow('Prediction', image)
+
+    if count == 0:
+        cycle_count_aux = 0
+
+    if count == 1 and cycle_count_aux == 50:
+        print('*ALERTA* *ALERTA* *ALERTA*')
+        r = sendMail(subject = '*ALERTA*',
+                     body = cuerpo,
+                     htmlBody = True,
+                     receiver = listing,
+                     ccRec = ccMails,
+                     bccRec = bccMails,
+                     files = fileses,
+                     sender='Sistema automatico de Alerta de Aglomeracion de personas')
+
+        cycle_count_aux = 0
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
